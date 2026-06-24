@@ -78,6 +78,13 @@ build_image() {
   base="${BASE_IMAGE:-$(env_value BASE_IMAGE)}"
   [[ -n "$reg" ]]  && build_args+=(--build-arg "BASE_IMAGE_REGISTRY=${reg}")
   [[ -n "$base" ]] && build_args+=(--build-arg "BASE_IMAGE=${base}")
+  # Semeru JDK overrides (e.g. to pin a version or point at an internal mirror).
+  local k v
+  for k in SEMERU_JDK_VERSION SEMERU_JDK_FILE_VERSION SEMERU_BASE_URL; do
+    v="$(printf '%s' "${!k:-}")"
+    [[ -z "$v" ]] && v="$(env_value "$k")"
+    [[ -n "$v" ]] && build_args+=(--build-arg "${k}=${v}")
+  done
   "$DOCKER" build ${build_args[@]+"${build_args[@]}"} -t "$IMAGE" "$SCRIPT_DIR"
 }
 
