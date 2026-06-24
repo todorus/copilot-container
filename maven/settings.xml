@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Maven settings for the Copilot Sandbox.
+
+  Values are resolved from environment variables at Maven runtime (see ${env.*}
+  references below), so no real credentials are baked into the image. Provide them
+  via your `.env` file / the wrapper script:
+
+    ARTIFACTORY_URL       Full URL of the Artifactory virtual repo (Maven mirror)
+    ARTIFACTORY_USERNAME  Artifactory username
+    ARTIFACTORY_PASSWORD  Artifactory password or access token
+
+  To use a fully custom settings.xml instead, mount your own file over
+  /home/copilot/.m2/settings.xml (the wrapper script supports this).
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                              https://maven.apache.org/xsd/settings-1.0.0.xsd">
+
+  <!-- Credentials for the Artifactory mirror. The id must match the mirror id. -->
+  <servers>
+    <server>
+      <id>artifactory</id>
+      <username>${env.ARTIFACTORY_USERNAME}</username>
+      <password>${env.ARTIFACTORY_PASSWORD}</password>
+    </server>
+  </servers>
+
+  <!-- Route ALL dependency/plugin resolution through Artifactory. -->
+  <mirrors>
+    <mirror>
+      <id>artifactory</id>
+      <name>Company Artifactory</name>
+      <url>${env.ARTIFACTORY_URL}</url>
+      <mirrorOf>*</mirrorOf>
+    </mirror>
+  </mirrors>
+
+</settings>

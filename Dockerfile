@@ -50,6 +50,10 @@ RUN npm install -g @github/copilot
 RUN groupadd --gid "${APP_GID}" "${APP_USER}" \
     && useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home --shell /bin/bash "${APP_USER}"
 
+# Maven settings: routes dependency resolution through the company Artifactory.
+# Credentials/URL are resolved from env vars at runtime (see maven/settings.xml).
+COPY --chown=${APP_UID}:${APP_GID} maven/settings.xml /home/${APP_USER}/.m2/settings.xml
+
 # Copilot stores its credentials/config here; persisted via a Docker volume.
 ENV COPILOT_HOME=/home/${APP_USER}/.copilot
 
