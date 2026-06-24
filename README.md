@@ -75,12 +75,29 @@ All runtime configuration lives in `.env` (copied from [`.env.example`](./.env.e
 | Variable | Purpose |
 | --- | --- |
 | `COPILOT_DEFAULT_MODEL` | Default model for programmatic mode (`--model` overrides). |
+| `BASE_IMAGE_REGISTRY` | Registry the Semeru base image is pulled from at build time (default `docker.io`). |
+| `BASE_IMAGE` | Base image name:tag pulled from the registry (default `ibm-semeru-runtimes:open-21-jdk-jammy`). |
 | `ARTIFACTORY_URL` | JFrog Platform URL (not a secret). |
 | `ARTIFACTORY_REPO_RESOLVE_RELEASES` / `ARTIFACTORY_REPO_RESOLVE_SNAPSHOTS` | Maven resolution repos in Artifactory. |
 | `ARTIFACTORY_TOKEN_FILE` | Fallback only: host path to a file holding a scoped access token. |
 | `MCP_NPM_REGISTRY` | npm-compatible registry for installing `npx`-based MCP servers. |
 | `MCP_OCI_REGISTRY` | OCI/Docker registry for container-based MCP servers (optional). |
 | `AZURE_DEVOPS_ORG` | Your Azure DevOps organization name. |
+
+### Base image registry
+
+By default the Semeru base image is pulled from Docker Hub. To pull it from a
+company registry or mirror instead, set `BASE_IMAGE_REGISTRY` in `.env` to the
+registry host:
+
+```dotenv
+BASE_IMAGE_REGISTRY=registry.mycompany.com
+```
+
+The image is resolved as `${BASE_IMAGE_REGISTRY}/${BASE_IMAGE}`. If your registry
+stores the image under a different path or tag, override `BASE_IMAGE` too. The
+`copilot-sandbox` wrapper passes both values to `docker build` automatically, so a
+plain `./copilot-sandbox build` (or first run) picks them up.
 
 ### Maven / Artifactory
 
