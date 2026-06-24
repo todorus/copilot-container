@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# =============================================================================
+# copilot-sandbox — run the GitHub Copilot CLI inside an isolated Docker sandbox.
+#
+# Because the container is isolated from your host, the agent runs with full
+# tool permissions (--allow-all-tools) in programmatic mode without risking your
+# machine.
+#
+# Usage:
+#   ./copilot-sandbox                        Start an interactive Copilot session
+#   ./copilot-sandbox -p "PROMPT"            Run a one-shot prompt (programmatic)
+#   ./copilot-sandbox -p "PROMPT" --model M  ...with a specific model
+#   ./copilot-sandbox login                  Log in to Copilot (device flow, once)
+#   ./copilot-sandbox az-login               Log in to Azure (device flow, once)
+#   ./copilot-sandbox shell                  Open a bash shell in the sandbox
+#   ./copilot-sandbox build                  (Re)build the image
+#
+# Flags:
+#   --build        Force an image rebuild before running
+#   -p, --prompt   Prompt for programmatic (one-shot) mode
+#   --model        Model to use (defaults to $COPILOT_DEFAULT_MODEL or "auto")
+#   -h, --help     Show this help
+# =============================================================================
+set -euo pipefail
+
+# --- Resolve paths ------------------------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+IMAGE="${COPILOT_SANDBOX_IMAGE:-copilot-sandbox:latest}"
+ENV_FILE="${SCRIPT_DIR}/.env"
+
+# Named volumes that persist credentials and the agent workspace across runs.
+VOL_COPILOT="copilot-sandbox-copilot"
+VOL_AZURE="copilot-sandbox-azure"
+VOL_WORKSPACE="copilot-sandbox-workspace"
+
+# In-container paths (must match the Dockerfile).
+C_COPILOT_HOME="/home/copilot/.copilot"
+C_AZURE_DIR="/home/copilot/.azure"
+C_WORKSPACE="/home/copilot/workspace"
+
+# --- Locate the Docker CLI ----------------------------------------------------
+DOCKER="docker"
+if ! command -v "$DOCKER" >/dev/null 2>&1; then
+  if [[ -x "/Applications/Docker.app/Contents/Resources/bin/docker" ]]; then
+    DOCKER="/Applications/Docker.app/Contents/Resources/bin/docker"
+  else
+    echo "error: docker CLI not found on PATH." >&2
+    exit 127
+  fi
+fi
+
+usage() { sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+
+image_exists() { "$DOCKER" image inspect "$IMAGE" >/dev/null 2>&1; }
+
+build_image() {
+  echo ">> Building $IMAGE ..." >&2
+  "$DOCKER" build -t "$IMAGE" "$SCRIPT_DIR"
+}
+
+# --- Parse arguments ----------------------------------------------------------
+FORCE_BUILD=0
+PROMPT=""
+MODEL=""
+SUBCOMMAND=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)   usage; exit 0 ;;
+    --build)     FORCE_BUILD=1; shift ;;
+    build)       SUBCOMMAND="build"; shift ;;
+    login)       SUBCOMMAND="login"; shift ;;
+    az-login)    SUBCOMMAND="az-login"; shift ;;
+    shell)       SUBCOMMAND="shell"; shift ;;
+    -p|--prompt) PROMPT="${2:-}"; shift 2 ;;
+    --model)     MODEL="${2:-}"; shift 2 ;;
+    *)           echo "error: unknown argument: $1" >&2; usage; exit 2 ;;
+  esac
+done
+
+# --- Ensure the image exists --------------------------------------------------
+if [[ "$SUBCOMMAND" == "build" || "$FORCE_BUILD" == "1" ]]; then
+  build_image
+  [[ "$SUBCOMMAND" == "build" ]] && exit 0
+elif ! image_exists; then
+  build_image
+fi
+
+# --- Assemble common docker run options --------------------------------------
+RUN_OPTS=(--rm)
+[[ -f "$ENV_FILE" ]] && RUN_OPTS+=(--env-file "$ENV_FILE")
+RUN_OPTS+=(
+  -v "${VOL_COPILOT}:${C_COPILOT_HOME}"
+  -v "${VOL_AZURE}:${C_AZURE_DIR}"
+  -v "${VOL_WORKSPACE}:${C_WORKSPACE}"
+)
+
+tty_opts() { if [[ -t 0 ]]; then echo "-it"; else echo "-i"; fi; }
+
+# --- Dispatch -----------------------------------------------------------------
+case "$SUBCOMMAND" in
+  login)
+    exec "$DOCKER" run $(tty_opts) "${RUN_OPTS[@]}" "$IMAGE" copilot login
+    ;;
+  az-login)
+    exec "$DOCKER" run $(tty_opts) "${RUN_OPTS[@]}" "$IMAGE" az login --use-device-code
+    ;;
+  shell)
+    exec "$DOCKER" run $(tty_opts) "${RUN_OPTS[@]}" "$IMAGE" bash
+    ;;
+  "")
+    if [[ -n "$PROMPT" ]]; then
+      # Programmatic (one-shot) mode with full tool permissions.
+      if [[ -z "$MODEL" ]]; then
+        MODEL="${COPILOT_DEFAULT_MODEL:-}"
+        # Fall back to the value in .env, else "auto".
+        if [[ -z "$MODEL" && -f "$ENV_FILE" ]]; then
+          MODEL="$(grep -E '^[[:space:]]*COPILOT_DEFAULT_MODEL=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' | xargs)"
+        fi
+        MODEL="${MODEL:-auto}"
+      fi
+      exec "$DOCKER" run -i "${RUN_OPTS[@]}" "$IMAGE" \
+        copilot -p "$PROMPT" --model "$MODEL" --allow-all-tools
+    else
+      # Interactive session.
+      exec "$DOCKER" run $(tty_opts) "${RUN_OPTS[@]}" "$IMAGE" copilot
+    fi
+    ;;
+esac
