@@ -7,7 +7,7 @@ with full permissions (`--allow-all-tools`) without risking your machine.
 The image comes preinstalled with:
 
 - **GitHub Copilot CLI** — device-flow login, credentials persisted across runs
-- **IBM Semeru JDK 21** + **Maven** — Maven resolves through your private Artifactory via the JFrog CLI (no plaintext credentials)
+- **IBM Semeru JDK 21** (installed via tarball on Ubuntu 24.04) + **Maven** — Maven resolves through your private Artifactory via the JFrog CLI (no plaintext credentials)
 - A configurable set of **MCP servers** (npm / binary / container / remote), incl. **Azure DevOps**
 - **Azure CLI** (`az`) and **JFrog CLI** (`jf`) — for Azure DevOps and Artifactory auth
 
@@ -75,8 +75,10 @@ All runtime configuration lives in `.env` (copied from [`.env.example`](./.env.e
 | Variable | Purpose |
 | --- | --- |
 | `COPILOT_DEFAULT_MODEL` | Default model for programmatic mode (`--model` overrides). |
-| `BASE_IMAGE_REGISTRY` | Registry the Semeru base image is pulled from at build time (default `docker.io`). |
-| `BASE_IMAGE` | Base image name:tag pulled from the registry (default `ibm-semeru-runtimes:open-21-jdk-jammy`). |
+| `BASE_IMAGE_REGISTRY` | Registry the base image is pulled from at build time (default `docker.io`). |
+| `BASE_IMAGE` | Base image name:tag pulled from the registry (default `ubuntu:24.04`). |
+| `SEMERU_JDK_VERSION` / `SEMERU_JDK_FILE_VERSION` | Pinned Semeru JDK 21 version (tag form / filename form). Override to bump the JDK. |
+| `SEMERU_BASE_URL` | Where the Semeru JDK tarball is downloaded from (point at an internal mirror to avoid github.com at build time). |
 | `ARTIFACTORY_URL` | JFrog Platform URL (not a secret). |
 | `ARTIFACTORY_REPO_RESOLVE_RELEASES` / `ARTIFACTORY_REPO_RESOLVE_SNAPSHOTS` | Maven resolution repos in Artifactory. |
 | `ARTIFACTORY_TOKEN_FILE` | Fallback only: host path to a file holding a scoped access token. |
@@ -86,9 +88,10 @@ All runtime configuration lives in `.env` (copied from [`.env.example`](./.env.e
 
 ### Base image registry
 
-By default the Semeru base image is pulled from Docker Hub. To pull it from a
-company registry or mirror instead, set `BASE_IMAGE_REGISTRY` in `.env` to the
-registry host:
+By default the base image (`ubuntu:24.04`) is pulled from Docker Hub, and the
+Semeru JDK 21 is installed on top from its official release tarball. To pull the
+base from a company registry or mirror instead, set `BASE_IMAGE_REGISTRY` in
+`.env` to the registry host:
 
 ```dotenv
 BASE_IMAGE_REGISTRY=registry.mycompany.com
@@ -98,6 +101,11 @@ The image is resolved as `${BASE_IMAGE_REGISTRY}/${BASE_IMAGE}`. If your registr
 stores the image under a different path or tag, override `BASE_IMAGE` too. The
 `copilot-sandbox` wrapper passes both values to `docker build` automatically, so a
 plain `./copilot-sandbox build` (or first run) picks them up.
+
+If your environment can't reach `github.com` at build time, point
+`SEMERU_BASE_URL` at an internal mirror of the Semeru release assets (and adjust
+`SEMERU_JDK_VERSION` / `SEMERU_JDK_FILE_VERSION` to pin a different JDK). These
+are passed to `docker build` from `.env` by the wrapper as well.
 
 ### Maven / Artifactory
 
