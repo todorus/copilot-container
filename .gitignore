@@ -1,0 +1,19 @@
+# Local environment / secrets — never commit real credentials
+.env
+*.local
+secrets/
+
+# Mounted/generated runtime config
+maven/settings.local.xml
+mcp-config.generated.json
+
+# OS / editor cruft
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Build artifacts
+target/
+dist/
+*.log
