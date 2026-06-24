@@ -26,9 +26,16 @@ Everything is driven by one wrapper script: [`copilot-sandbox`](./copilot-sandbo
 ```bash
 # 1. Configure your environment
 cp .env.example .env
-$EDITOR .env            # fill in Artifactory, MCP registry, Azure DevOps org
+# fill in Artifactory, MCP registry, Azure DevOps org
+```    
 
-# 2. Build the image (also happens automatically on first run)
+```bash
+# 2. If the base image is pulled from a private registry, log in first
+./copilot-sandbox docker-login   # you may need to use a PAT instead of your password
+```
+
+```bash
+# 3. Build the image (also happens automatically on first run)
 ./copilot-sandbox build
 ```
 
@@ -40,6 +47,14 @@ Credentials are stored in Docker volumes, so you only do this once per machine.
 ./copilot-sandbox login      # GitHub Copilot — follow the device-flow URL/code
 ./copilot-sandbox az-login   # Azure (for the Azure DevOps MCP) — device flow
 ./copilot-sandbox jf-login   # Artifactory (Maven) — JFrog browser/device flow
+```
+
+If your **base image** is hosted on a private Docker registry (i.e. you set
+`BASE_IMAGE_REGISTRY` to something other than the public `docker.io`), also log the
+host Docker CLI into that registry once, so `build` can pull the base image:
+
+```bash
+./copilot-sandbox docker-login   # docker login against BASE_IMAGE_REGISTRY
 ```
 
 ## Usage
@@ -98,6 +113,20 @@ The image is resolved as `${BASE_IMAGE_REGISTRY}/${BASE_IMAGE}`. If your registr
 stores the image under a different path or tag, override `BASE_IMAGE` too. The
 `copilot-sandbox` wrapper passes both values to `docker build` automatically, so a
 plain `./copilot-sandbox build` (or first run) picks them up.
+
+**Authenticating to a private registry.** If the registry requires a login, run:
+
+```bash
+./copilot-sandbox docker-login   # runs `docker login ${BASE_IMAGE_REGISTRY}`
+```
+
+This logs the **host** Docker CLI into `BASE_IMAGE_REGISTRY` and then follows the
+registry's normal login flow. Do this once before the first `build` (the build
+pulls the base image, so it fails with an auth error otherwise). Many registries
+(e.g. JFrog Artifactory, Azure Container Registry, GitHub Container Registry) do
+**not** accept your account password at the prompt — generate a **Personal Access
+Token (PAT)** scoped for the registry and paste that as the password instead. The
+default registry (`docker.io`) is public and needs no login.
 
 ### Maven / Artifactory
 

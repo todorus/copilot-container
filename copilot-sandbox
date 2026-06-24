@@ -13,6 +13,7 @@
 #   ./copilot-sandbox login                  Log in to Copilot (device flow, once)
 #   ./copilot-sandbox az-login               Log in to Azure (device flow, once)
 #   ./copilot-sandbox jf-login               Log in to Artifactory (JFrog web flow)
+#   ./copilot-sandbox docker-login           Log in to the base-image Docker registry
 #   ./copilot-sandbox shell                  Open a bash shell in the sandbox
 #   ./copilot-sandbox build                  (Re)build the image
 #
@@ -59,7 +60,7 @@ if ! command -v "$DOCKER" >/dev/null 2>&1; then
   fi
 fi
 
-usage() { sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 image_exists() { "$DOCKER" image inspect "$IMAGE" >/dev/null 2>&1; }
 
@@ -70,11 +71,14 @@ env_value() {
   grep -E "^[[:space:]]*${key}=" "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' | xargs || true
 }
 
+# Registry the base image is pulled from (env wins, then .env). Empty if unset.
+base_registry() { printf '%s' "${BASE_IMAGE_REGISTRY:-$(env_value BASE_IMAGE_REGISTRY)}"; }
+
 build_image() {
   echo ">> Building $IMAGE ..." >&2
   local build_args=()
   local reg base
-  reg="${BASE_IMAGE_REGISTRY:-$(env_value BASE_IMAGE_REGISTRY)}"
+  reg="$(base_registry)"
   base="${BASE_IMAGE:-$(env_value BASE_IMAGE)}"
   [[ -n "$reg" ]]  && build_args+=(--build-arg "BASE_IMAGE_REGISTRY=${reg}")
   [[ -n "$base" ]] && build_args+=(--build-arg "BASE_IMAGE=${base}")
@@ -95,12 +99,30 @@ while [[ $# -gt 0 ]]; do
     login)       SUBCOMMAND="login"; shift ;;
     az-login)    SUBCOMMAND="az-login"; shift ;;
     jf-login)    SUBCOMMAND="jf-login"; shift ;;
+    docker-login) SUBCOMMAND="docker-login"; shift ;;
     shell)       SUBCOMMAND="shell"; shift ;;
     -p|--prompt) PROMPT="${2:-}"; shift 2 ;;
     --model)     MODEL="${2:-}"; shift 2 ;;
     *)           echo "error: unknown argument: $1" >&2; usage; exit 2 ;;
   esac
 done
+
+# --- Host Docker registry login (must happen before any build) ----------------
+# Logs the host Docker CLI into the registry the base image is pulled from, so
+# `build` can fetch ${BASE_IMAGE_REGISTRY}/${BASE_IMAGE}. Handled here, before the
+# image-existence check, so it never triggers a build (which is what needs auth).
+if [[ "$SUBCOMMAND" == "docker-login" ]]; then
+  REG="$(base_registry)"
+  if [[ -z "$REG" ]]; then
+    echo "error: BASE_IMAGE_REGISTRY is not set (env or .env)." >&2
+    echo "       The default registry (docker.io) is public and needs no login." >&2
+    echo "       Set BASE_IMAGE_REGISTRY to your registry host (e.g. registry.mycompany.com) first." >&2
+    exit 2
+  fi
+  echo ">> Logging in to Docker registry: $REG" >&2
+  echo "   If prompted for a password, use a Personal Access Token (PAT) for the registry." >&2
+  exec "$DOCKER" login "$REG"
+fi
 
 # --- Ensure the image exists --------------------------------------------------
 if [[ "$SUBCOMMAND" == "build" || "$FORCE_BUILD" == "1" ]]; then
