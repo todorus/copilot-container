@@ -15,6 +15,15 @@ ARG APP_USER=copilot
 ARG APP_UID=1000
 ARG APP_GID=1000
 
+# =============================================================================
+# >>> MCP SERVERS CONFIG <<<
+# To add/remove MCP servers, edit `mcp/servers.json` (the manifest copied below).
+# Set "enabled": true on the servers you want; secrets/URLs are injected at runtime
+# via ${ENV_VARS}. The manifest path is configurable here:
+ARG MCP_SERVERS_MANIFEST=/opt/copilot-sandbox/mcp/servers.json
+ENV MCP_SERVERS_MANIFEST=${MCP_SERVERS_MANIFEST}
+# =============================================================================
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # --- Base OS packages ---------------------------------------------------------
@@ -25,6 +34,7 @@ RUN apt-get update \
         git \
         gnupg \
         jq \
+        gettext-base \
         unzip \
         less \
     && rm -rf /var/lib/apt/lists/*
@@ -62,7 +72,13 @@ ENV WORKSPACE=/home/${APP_USER}/workspace
 RUN mkdir -p "${COPILOT_HOME}" "${WORKSPACE}" \
     && chown -R "${APP_USER}:${APP_USER}" "/home/${APP_USER}"
 
+# MCP server manifest + entrypoint that renders it into Copilot's mcp-config.json.
+COPY mcp/servers.json /opt/copilot-sandbox/mcp/servers.json
+COPY entrypoint.sh /opt/copilot-sandbox/entrypoint.sh
+RUN chmod +x /opt/copilot-sandbox/entrypoint.sh
+
 USER ${APP_USER}
 WORKDIR ${WORKSPACE}
 
+ENTRYPOINT ["/opt/copilot-sandbox/entrypoint.sh"]
 CMD ["copilot"]

@@ -1,0 +1,52 @@
+[
+  {
+    "_manifest_meta": true,
+    "comment": "MCP server manifest for the Copilot Sandbox. ADD/REMOVE/EDIT servers here.",
+    "comment2": "At container start, entrypoint.sh renders the enabled entries below into",
+    "comment3": "$COPILOT_HOME/mcp-config.json, substituting ${ENV_VARS} so secrets/URLs are",
+    "comment4": "injected at runtime and never baked into the image. Set \"enabled\": true to use one.",
+    "comment5": "Supported types: 'local' (stdio: npm/npx, a binary, or 'docker run ...' for a",
+    "comment6": "container image) and 'http'/'sse' (remote endpoints). See README for examples."
+  },
+
+  {
+    "name": "example-npm",
+    "enabled": false,
+    "type": "local",
+    "command": "npx",
+    "args": ["-y", "@upstash/context7-mcp"],
+    "env": {},
+    "tools": ["*"]
+  },
+
+  {
+    "name": "example-binary",
+    "enabled": false,
+    "type": "local",
+    "command": "/usr/local/bin/my-mcp-server",
+    "args": ["--stdio"],
+    "env": {},
+    "tools": ["*"]
+  },
+
+  {
+    "name": "example-container",
+    "enabled": false,
+    "type": "local",
+    "command": "docker",
+    "args": ["run", "-i", "--rm", "${MCP_OCI_REGISTRY}/team/my-mcp:latest"],
+    "env": {},
+    "tools": ["*"]
+  },
+
+  {
+    "name": "example-remote",
+    "enabled": false,
+    "type": "http",
+    "url": "https://mcp.example.com/mcp",
+    "headers": {
+      "Authorization": "Bearer ${EXAMPLE_MCP_TOKEN}"
+    },
+    "tools": ["*"]
+  }
+]
