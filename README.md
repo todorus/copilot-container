@@ -7,9 +7,9 @@ with full permissions (`--allow-all-tools`) without risking your machine.
 The image comes preinstalled with:
 
 - **GitHub Copilot CLI** — device-flow login, credentials persisted across runs
-- **IBM Semeru JDK 21** + **Maven** — Maven routed through your private Artifactory
+- **IBM Semeru JDK 21** + **Maven** — Maven resolves through your private Artifactory via the JFrog CLI (no plaintext credentials)
 - A configurable set of **MCP servers** (npm / binary / container / remote), incl. **Azure DevOps**
-- **Azure CLI** (`az`) — used by the Azure DevOps MCP for authentication
+- **Azure CLI** (`az`) and **JFrog CLI** (`jf`) — for Azure DevOps and Artifactory auth
 
 Everything is driven by one wrapper script: [`copilot-sandbox`](./copilot-sandbox).
 
@@ -39,6 +39,7 @@ Credentials are stored in Docker volumes, so you only do this once per machine.
 ```bash
 ./copilot-sandbox login      # GitHub Copilot — follow the device-flow URL/code
 ./copilot-sandbox az-login   # Azure (for the Azure DevOps MCP) — device flow
+./copilot-sandbox jf-login   # Artifactory (Maven) — JFrog browser/device flow
 ```
 
 ## Usage
@@ -74,21 +75,30 @@ All runtime configuration lives in `.env` (copied from [`.env.example`](./.env.e
 | Variable | Purpose |
 | --- | --- |
 | `COPILOT_DEFAULT_MODEL` | Default model for programmatic mode (`--model` overrides). |
-| `ARTIFACTORY_URL` | Full URL of the Artifactory virtual repo used as the Maven mirror. |
-| `ARTIFACTORY_USERNAME` / `ARTIFACTORY_PASSWORD` | Artifactory credentials (token preferred). |
+| `ARTIFACTORY_URL` | JFrog Platform URL (not a secret). |
+| `ARTIFACTORY_REPO_RESOLVE_RELEASES` / `ARTIFACTORY_REPO_RESOLVE_SNAPSHOTS` | Maven resolution repos in Artifactory. |
+| `ARTIFACTORY_TOKEN_FILE` | Fallback only: host path to a file holding a scoped access token. |
 | `MCP_NPM_REGISTRY` | npm-compatible registry for installing `npx`-based MCP servers. |
 | `MCP_OCI_REGISTRY` | OCI/Docker registry for container-based MCP servers (optional). |
 | `AZURE_DEVOPS_ORG` | Your Azure DevOps organization name. |
 
 ### Maven / Artifactory
 
-[`maven/settings.xml`](./maven/settings.xml) mirrors **all** dependency/plugin resolution
-through `ARTIFACTORY_URL` and authenticates with `ARTIFACTORY_USERNAME` /
-`ARTIFACTORY_PASSWORD`. Values are resolved from environment variables at Maven runtime,
-so no credentials are baked into the image.
+Artifactory authentication goes through the **JFrog CLI** — there are **no plaintext
+credentials** in environment variables, `.env`, or the image. Two ways to authenticate:
 
-To use a fully custom settings file, mount your own over
-`/home/copilot/.m2/settings.xml`.
+- **Preferred — `./copilot-sandbox jf-login`:** a JFrog browser/device-style web login
+  (Artifactory 7.64.0+). The credential is stored in the persisted `~/.jfrog` volume
+  (do it once per machine), consistent with the Copilot/Azure logins.
+- **Fallback — access-token file:** generate a scoped, revocable Artifactory access
+  token and write it to `secrets/artifactory-token` (or set `ARTIFACTORY_TOKEN_FILE`).
+  The wrapper mounts it read-only and configures it via **stdin**, so the token never
+  appears in env vars or `docker inspect`.
+
+At container start, the entrypoint generates a global `jf mvn-config` from
+`ARTIFACTORY_REPO_RESOLVE_*`. A transparent `mvn` shim then routes `mvn` through
+`jf mvn`, so dependency resolution authenticates against Artifactory automatically.
+If JFrog isn't configured, `mvn` falls back to plain Maven.
 
 ### MCP servers
 
@@ -151,11 +161,13 @@ copilot-sandbox  ──docker run──►  ENTRYPOINT entrypoint.sh
    │  (.env, named volumes)            │
    │                                   ├─ render mcp/servers.json ─► ~/.copilot/mcp-config.json
    │                                   ├─ point npx at MCP_NPM_REGISTRY
+   │                                   ├─ configure Artifactory (jf) + global mvn-config
    │                                   └─ exec: copilot  |  copilot -p ... --allow-all-tools
    │
    └─ persisted volumes:
         copilot-sandbox-copilot   → ~/.copilot   (Copilot login)
         copilot-sandbox-azure     → ~/.azure     (az login)
+        copilot-sandbox-jfrog     → ~/.jfrog     (jf login / Artifactory token)
         copilot-sandbox-workspace → ~/workspace  (checked-out code)
 ```
 
@@ -163,9 +175,11 @@ copilot-sandbox  ──docker run──►  ENTRYPOINT entrypoint.sh
 
 - Programmatic mode runs Copilot with `--allow-all-tools`; this is safe **only** because
   the container is isolated. Don't add a host bind-mount of sensitive directories.
-- No secrets are baked into the image — Artifactory/MCP credentials are injected at
-  runtime via `.env` env vars, and logins are stored in Docker volumes.
-- `.env` and local secrets are gitignored. Keep them out of version control.
+- **No secrets are baked into the image or passed as env vars.** Artifactory auth uses the
+  JFrog CLI credential store (web login) or a token fed via stdin from a read-only mounted
+  file — never via `-e`/`docker inspect`. Copilot and Azure logins are stored in Docker volumes.
+- `.env`, the `secrets/` directory, and other local secrets are gitignored. Keep them out
+  of version control.
 
 ## Updating
 
