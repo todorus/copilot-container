@@ -12,6 +12,7 @@
 #   ./copilot-sandbox -p "PROMPT" --model M  ...with a specific model
 #   ./copilot-sandbox login                  Log in to Copilot (device flow, once)
 #   ./copilot-sandbox az-login               Log in to Azure (device flow, once)
+#   ./copilot-sandbox jf-login               Log in to Artifactory (JFrog web flow)
 #   ./copilot-sandbox shell                  Open a bash shell in the sandbox
 #   ./copilot-sandbox build                  (Re)build the image
 #
@@ -20,6 +21,12 @@
 #   -p, --prompt   Prompt for programmatic (one-shot) mode
 #   --model        Model to use (defaults to $COPILOT_DEFAULT_MODEL or "auto")
 #   -h, --help     Show this help
+#
+# Artifactory auth (no plaintext credentials):
+#   - Preferred: run `./copilot-sandbox jf-login` once (browser/device flow).
+#   - Fallback:  place a scoped access token in a file (default
+#                ./secrets/artifactory-token, or set ARTIFACTORY_TOKEN_FILE) and
+#                it is mounted read-only and configured via stdin automatically.
 # =============================================================================
 set -euo pipefail
 
@@ -31,12 +38,15 @@ ENV_FILE="${SCRIPT_DIR}/.env"
 # Named volumes that persist credentials and the agent workspace across runs.
 VOL_COPILOT="copilot-sandbox-copilot"
 VOL_AZURE="copilot-sandbox-azure"
+VOL_JFROG="copilot-sandbox-jfrog"
 VOL_WORKSPACE="copilot-sandbox-workspace"
 
 # In-container paths (must match the Dockerfile).
 C_COPILOT_HOME="/home/copilot/.copilot"
 C_AZURE_DIR="/home/copilot/.azure"
+C_JFROG_DIR="/home/copilot/.jfrog"
 C_WORKSPACE="/home/copilot/workspace"
+C_TOKEN_FILE="/run/secrets/artifactory-token"
 
 # --- Locate the Docker CLI ----------------------------------------------------
 DOCKER="docker"
@@ -49,7 +59,7 @@ if ! command -v "$DOCKER" >/dev/null 2>&1; then
   fi
 fi
 
-usage() { sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 image_exists() { "$DOCKER" image inspect "$IMAGE" >/dev/null 2>&1; }
 
@@ -71,6 +81,7 @@ while [[ $# -gt 0 ]]; do
     build)       SUBCOMMAND="build"; shift ;;
     login)       SUBCOMMAND="login"; shift ;;
     az-login)    SUBCOMMAND="az-login"; shift ;;
+    jf-login)    SUBCOMMAND="jf-login"; shift ;;
     shell)       SUBCOMMAND="shell"; shift ;;
     -p|--prompt) PROMPT="${2:-}"; shift 2 ;;
     --model)     MODEL="${2:-}"; shift 2 ;;
@@ -92,8 +103,29 @@ RUN_OPTS=(--rm)
 RUN_OPTS+=(
   -v "${VOL_COPILOT}:${C_COPILOT_HOME}"
   -v "${VOL_AZURE}:${C_AZURE_DIR}"
+  -v "${VOL_JFROG}:${C_JFROG_DIR}"
   -v "${VOL_WORKSPACE}:${C_WORKSPACE}"
 )
+
+# Artifactory token-file fallback: if a token file exists on the host, mount it
+# read-only and point the container's ARTIFACTORY_TOKEN_FILE at it. The host path
+# comes from $ARTIFACTORY_TOKEN_FILE (env or .env), defaulting to ./secrets/artifactory-token.
+resolve_token_file() {
+  local p="${ARTIFACTORY_TOKEN_FILE:-}"
+  if [[ -z "$p" && -f "$ENV_FILE" ]]; then
+    p="$(grep -E '^[[:space:]]*ARTIFACTORY_TOKEN_FILE=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' | xargs || true)"
+  fi
+  p="${p:-secrets/artifactory-token}"
+  [[ "$p" != /* ]] && p="${SCRIPT_DIR}/${p}"
+  printf '%s' "$p"
+}
+HOST_TOKEN_FILE="$(resolve_token_file)"
+if [[ -s "$HOST_TOKEN_FILE" ]]; then
+  RUN_OPTS+=(
+    -v "${HOST_TOKEN_FILE}:${C_TOKEN_FILE}:ro"
+    -e "ARTIFACTORY_TOKEN_FILE=${C_TOKEN_FILE}"
+  )
+fi
 
 tty_opts() { if [[ -t 0 ]]; then echo "-it"; else echo "-i"; fi; }
 
@@ -104,6 +136,9 @@ case "$SUBCOMMAND" in
     ;;
   az-login)
     exec "$DOCKER" run $(tty_opts) "${RUN_OPTS[@]}" "$IMAGE" az login --use-device-code
+    ;;
+  jf-login)
+    exec "$DOCKER" run $(tty_opts) "${RUN_OPTS[@]}" "$IMAGE" jf login
     ;;
   shell)
     exec "$DOCKER" run $(tty_opts) "${RUN_OPTS[@]}" "$IMAGE" bash
