@@ -50,8 +50,13 @@ RUN curl -fsSL "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/b
     && mkdir -p /opt/maven \
     && tar -xzf /tmp/maven.tar.gz -C /opt/maven --strip-components=1 \
     && rm /tmp/maven.tar.gz \
-    && ln -s /opt/maven/bin/mvn /usr/local/bin/mvn
+    && ln -s /opt/maven/bin/mvn /usr/local/bin/mvn.real
 ENV MAVEN_HOME=/opt/maven
+
+# Transparent `mvn` shim: routes through `jf mvn` (Artifactory, authenticated via
+# the JFrog CLI credential store) when configured, else falls back to plain Maven.
+COPY bin/mvn /usr/local/bin/mvn
+RUN chmod +x /usr/local/bin/mvn
 
 # --- GitHub Copilot CLI -------------------------------------------------------
 RUN npm install -g @github/copilot
@@ -72,10 +77,6 @@ RUN curl -fL https://install-cli.jfrog.io | sh \
 # --- Non-root user ------------------------------------------------------------
 RUN groupadd --gid "${APP_GID}" "${APP_USER}" \
     && useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home --shell /bin/bash "${APP_USER}"
-
-# Maven settings: routes dependency resolution through the company Artifactory.
-# Credentials/URL are resolved from env vars at runtime (see maven/settings.xml).
-COPY --chown=${APP_UID}:${APP_GID} maven/settings.xml /home/${APP_USER}/.m2/settings.xml
 
 # Copilot stores its credentials/config here; persisted via a Docker volume.
 ENV COPILOT_HOME=/home/${APP_USER}/.copilot

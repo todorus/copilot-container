@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Transparent Maven shim.
+#
+# When the JFrog CLI has been configured with an Artifactory server and a global
+# Maven resolution config (set up by entrypoint.sh), route `mvn` through
+# `jf mvn` so dependencies resolve from Artifactory using the JFrog credential
+# store — no plaintext credentials in env vars or settings.xml. Otherwise fall
+# back to the real Maven binary.
+set -euo pipefail
+
+REAL_MVN="/usr/local/bin/mvn.real"
+SENTINEL="${JFROG_CLI_HOME_DIR:-$HOME/.jfrog}/.mvn-configured"
+
+if [[ -f "$SENTINEL" ]] && command -v jf >/dev/null 2>&1; then
+  exec jf mvn "$@"
+fi
+
+exec "$REAL_MVN" "$@"
