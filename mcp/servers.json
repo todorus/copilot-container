@@ -10,6 +10,16 @@
   },
 
   {
+    "name": "azure-devops",
+    "enabled": true,
+    "type": "local",
+    "command": "npx",
+    "args": ["-y", "@azure-devops/mcp", "${AZURE_DEVOPS_ORG}"],
+    "env": {},
+    "tools": ["*"]
+  },
+
+  {
     "name": "example-npm",
     "enabled": false,
     "type": "local",

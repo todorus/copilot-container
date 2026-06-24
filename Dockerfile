@@ -56,6 +56,12 @@ ENV MAVEN_HOME=/opt/maven
 # --- GitHub Copilot CLI -------------------------------------------------------
 RUN npm install -g @github/copilot
 
+# --- Azure CLI ----------------------------------------------------------------
+# Required by the Azure DevOps MCP server, which authenticates via `az login`.
+# (This is also the documented extension point for adding other vendor CLIs.)
+RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash \
+    && rm -rf /var/lib/apt/lists/*
+
 # --- Non-root user ------------------------------------------------------------
 RUN groupadd --gid "${APP_GID}" "${APP_USER}" \
     && useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home --shell /bin/bash "${APP_USER}"
@@ -67,9 +73,13 @@ COPY --chown=${APP_UID}:${APP_GID} maven/settings.xml /home/${APP_USER}/.m2/sett
 # Copilot stores its credentials/config here; persisted via a Docker volume.
 ENV COPILOT_HOME=/home/${APP_USER}/.copilot
 
+# Azure CLI stores its login/credentials here; persisted via a Docker volume so
+# the `az login` device flow only has to be done once.
+ENV AZURE_CONFIG_DIR=/home/${APP_USER}/.azure
+
 # Workspace where the agent checks out and works on code.
 ENV WORKSPACE=/home/${APP_USER}/workspace
-RUN mkdir -p "${COPILOT_HOME}" "${WORKSPACE}" \
+RUN mkdir -p "${COPILOT_HOME}" "${AZURE_CONFIG_DIR}" "${WORKSPACE}" \
     && chown -R "${APP_USER}:${APP_USER}" "/home/${APP_USER}"
 
 # MCP server manifest + entrypoint that renders it into Copilot's mcp-config.json.
