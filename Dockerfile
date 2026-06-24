@@ -4,7 +4,16 @@
 # Base: IBM Semeru Runtimes (Open) JDK 21 on Ubuntu Jammy.
 # Adds: Node.js 22 (required by Copilot CLI), Maven, and the GitHub Copilot CLI.
 # =============================================================================
-FROM ibm-semeru-runtimes:open-21-jdk-jammy
+
+# --- Base image registry (override to pull from a company registry/mirror) ----
+# The base image is pulled from ${BASE_IMAGE_REGISTRY}/${BASE_IMAGE}. By default
+# it comes from Docker Hub. To use an internal registry/mirror, override at build
+# time, e.g.:
+#   --build-arg BASE_IMAGE_REGISTRY=registry.corp.example.com
+# (the copilot-sandbox wrapper passes these from .env automatically).
+ARG BASE_IMAGE_REGISTRY=docker.io
+ARG BASE_IMAGE=ibm-semeru-runtimes:open-21-jdk-jammy
+FROM ${BASE_IMAGE_REGISTRY}/${BASE_IMAGE}
 
 # --- Versions (override at build time with --build-arg) -----------------------
 ARG NODE_MAJOR=22

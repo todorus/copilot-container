@@ -63,9 +63,22 @@ usage() { sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 image_exists() { "$DOCKER" image inspect "$IMAGE" >/dev/null 2>&1; }
 
+# Read a variable's value from .env (last definition wins). Empty if unset/missing.
+env_value() {
+  local key="$1"
+  [[ -f "$ENV_FILE" ]] || return 0
+  grep -E "^[[:space:]]*${key}=" "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' | xargs || true
+}
+
 build_image() {
   echo ">> Building $IMAGE ..." >&2
-  "$DOCKER" build -t "$IMAGE" "$SCRIPT_DIR"
+  local build_args=()
+  local reg base
+  reg="${BASE_IMAGE_REGISTRY:-$(env_value BASE_IMAGE_REGISTRY)}"
+  base="${BASE_IMAGE:-$(env_value BASE_IMAGE)}"
+  [[ -n "$reg" ]]  && build_args+=(--build-arg "BASE_IMAGE_REGISTRY=${reg}")
+  [[ -n "$base" ]] && build_args+=(--build-arg "BASE_IMAGE=${base}")
+  "$DOCKER" build ${build_args[@]+"${build_args[@]}"} -t "$IMAGE" "$SCRIPT_DIR"
 }
 
 # --- Parse arguments ----------------------------------------------------------
