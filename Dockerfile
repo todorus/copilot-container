@@ -62,6 +62,13 @@ RUN npm install -g @github/copilot
 RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash \
     && rm -rf /var/lib/apt/lists/*
 
+# --- JFrog CLI ----------------------------------------------------------------
+# Used for secure Artifactory authentication (browser/device `jf login`, or a
+# scoped access token via stdin) so no plaintext credentials are ever placed in
+# environment variables. Maven resolves through Artifactory via `jf mvn`.
+RUN curl -fL https://install-cli.jfrog.io | sh \
+    && jf --version
+
 # --- Non-root user ------------------------------------------------------------
 RUN groupadd --gid "${APP_GID}" "${APP_USER}" \
     && useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home --shell /bin/bash "${APP_USER}"
@@ -77,9 +84,13 @@ ENV COPILOT_HOME=/home/${APP_USER}/.copilot
 # the `az login` device flow only has to be done once.
 ENV AZURE_CONFIG_DIR=/home/${APP_USER}/.azure
 
+# JFrog CLI stores its Artifactory credentials here; persisted via a Docker volume
+# so the `jf login` web flow (or token config) only has to be done once.
+ENV JFROG_CLI_HOME_DIR=/home/${APP_USER}/.jfrog
+
 # Workspace where the agent checks out and works on code.
 ENV WORKSPACE=/home/${APP_USER}/workspace
-RUN mkdir -p "${COPILOT_HOME}" "${AZURE_CONFIG_DIR}" "${WORKSPACE}" \
+RUN mkdir -p "${COPILOT_HOME}" "${AZURE_CONFIG_DIR}" "${JFROG_CLI_HOME_DIR}" "${WORKSPACE}" \
     && chown -R "${APP_USER}:${APP_USER}" "/home/${APP_USER}"
 
 # MCP server manifest + entrypoint that renders it into Copilot's mcp-config.json.
