@@ -1,7 +1,7 @@
 # =============================================================================
 # Copilot Sandbox image
 #
-# Base: Ubuntu Noble (24.04 LTS) — the JDK is NOT bundled by the base image.
+# Base: Amazon Linux 2023 — the JDK is NOT bundled by the base image.
 # Adds: IBM Semeru (Open) JDK 21, Node.js 22 (required by Copilot CLI), Maven,
 #       and the GitHub Copilot CLI.
 # =============================================================================
@@ -13,7 +13,7 @@
 #   --build-arg BASE_IMAGE_REGISTRY=registry.corp.example.com
 # (the copilot-sandbox wrapper passes these from .env automatically).
 ARG BASE_IMAGE_REGISTRY=docker.io
-ARG BASE_IMAGE=ubuntu:noble
+ARG BASE_IMAGE=amazonlinux:2023
 FROM ${BASE_IMAGE_REGISTRY}/${BASE_IMAGE}
 
 # --- Versions (override at build time with --build-arg) -----------------------
@@ -40,20 +40,22 @@ ARG MCP_SERVERS_MANIFEST=/opt/copilot-sandbox/mcp/servers.json
 ENV MCP_SERVERS_MANIFEST=${MCP_SERVERS_MANIFEST}
 # =============================================================================
 
-ENV DEBIAN_FRONTEND=noninteractive
-
 # --- Base OS packages ---------------------------------------------------------
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+# Amazon Linux 2023 ships `curl-minimal` and `gnupg2-minimal`, which provide the
+# `curl` and `gpg` commands used below, so they are not installed explicitly
+# (doing so conflicts with the pre-installed *-minimal packages).
+RUN dnf install -y --setopt=install_weak_deps=False \
         ca-certificates \
-        curl \
         git \
-        gnupg \
         jq \
-        gettext-base \
+        gettext \
         unzip \
+        tar \
+        gzip \
+        shadow-utils \
         less \
-    && rm -rf /var/lib/apt/lists/*
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
 
 # --- IBM Semeru (Open) JDK 21 -------------------------------------------------
 # Downloaded from the ibmruntimes GitHub releases at build time (the base image
@@ -61,12 +63,12 @@ RUN apt-get update \
 # The tarball is verified against its published SHA-256 before extraction.
 ENV JAVA_HOME=/opt/java/semeru
 RUN set -eux; \
-    case "$(dpkg --print-architecture)" in \
-        amd64)  SEMERU_ARCH=x64 ;; \
-        arm64)  SEMERU_ARCH=aarch64 ;; \
-        ppc64el) SEMERU_ARCH=ppc64le ;; \
-        s390x)  SEMERU_ARCH=s390x ;; \
-        *) echo "unsupported architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    case "$(uname -m)" in \
+        x86_64)  SEMERU_ARCH=x64 ;; \
+        aarch64) SEMERU_ARCH=aarch64 ;; \
+        ppc64le) SEMERU_ARCH=ppc64le ;; \
+        s390x)   SEMERU_ARCH=s390x ;; \
+        *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
     esac; \
     asset="ibm-semeru-open-jdk_${SEMERU_ARCH}_linux_${SEMERU_PKG_VERSION}.tar.gz"; \
     base_url="https://github.com/ibmruntimes/semeru21-binaries/releases/download/${SEMERU_RELEASE}"; \
@@ -80,9 +82,10 @@ RUN set -eux; \
 ENV PATH=${JAVA_HOME}/bin:${PATH}
 
 # --- Node.js (via NodeSource) -------------------------------------------------
-RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL "https://rpm.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
+    && dnf install -y nodejs \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
 
 # --- Maven (binary tarball, so it uses the Semeru JDK installed above) ---------
 RUN curl -fsSL "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz" \
@@ -104,8 +107,19 @@ RUN npm install -g @github/copilot
 # --- Azure CLI ----------------------------------------------------------------
 # Required by the Azure DevOps MCP server, which authenticates via `az login`.
 # (This is also the documented extension point for adding other vendor CLIs.)
-RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash \
-    && rm -rf /var/lib/apt/lists/*
+# Installed from Microsoft's RPM repo (Amazon Linux 2023 is EL9-compatible).
+RUN rpm --import https://packages.microsoft.com/keys/microsoft.asc \
+    && printf '%s\n' \
+        '[azure-cli]' \
+        'name=Azure CLI' \
+        'baseurl=https://packages.microsoft.com/yumrepos/azure-cli' \
+        'enabled=1' \
+        'gpgcheck=1' \
+        'gpgkey=https://packages.microsoft.com/keys/microsoft.asc' \
+        > /etc/yum.repos.d/azure-cli.repo \
+    && dnf install -y azure-cli \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
 
 # --- JFrog CLI ----------------------------------------------------------------
 # Used for secure Artifactory authentication (browser/device `jf login`, or a
@@ -115,8 +129,9 @@ RUN curl -fL https://install-cli.jfrog.io | sh \
     && jf --version
 
 # --- Non-root user ------------------------------------------------------------
-# ubuntu:noble ships a default `ubuntu` user at UID/GID 1000; remove it so the
-# copilot user can take that id (the Jammy-based Semeru image had no such user).
+# Remove any pre-existing user/group occupying the target UID/GID so the copilot
+# user can take that id (harmless no-op on Amazon Linux 2023, which has no such
+# default user, but keeps the build portable across base images).
 RUN if getent passwd "${APP_UID}" >/dev/null; then userdel -r "$(getent passwd "${APP_UID}" | cut -d: -f1)" 2>/dev/null || true; fi \
     && if getent group "${APP_GID}" >/dev/null; then groupdel "$(getent group "${APP_GID}" | cut -d: -f1)" 2>/dev/null || true; fi \
     && groupadd --gid "${APP_GID}" "${APP_USER}" \

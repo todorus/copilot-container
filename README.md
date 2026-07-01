@@ -91,7 +91,7 @@ All runtime configuration lives in `.env` (copied from [`.env.example`](./.env.e
 | --- | --- |
 | `COPILOT_DEFAULT_MODEL` | Default model for programmatic mode (`--model` overrides). |
 | `BASE_IMAGE_REGISTRY` | Registry the base image is pulled from at build time (default `docker.io`). |
-| `BASE_IMAGE` | Base image name:tag pulled from the registry (default `ubuntu:noble`). |
+| `BASE_IMAGE` | Base image name:tag pulled from the registry (default `amazonlinux:2023`). |
 | `ARTIFACTORY_URL` | JFrog Platform URL (not a secret). |
 | `ARTIFACTORY_REPO_RESOLVE_RELEASES` / `ARTIFACTORY_REPO_RESOLVE_SNAPSHOTS` | Maven resolution repos in Artifactory. |
 | `ARTIFACTORY_TOKEN_FILE` | Fallback only: host path to a file holding a scoped access token. |
@@ -101,7 +101,7 @@ All runtime configuration lives in `.env` (copied from [`.env.example`](./.env.e
 
 ### Base image registry
 
-By default the base image (`ubuntu:noble`) is pulled from Docker Hub. To pull it
+By default the base image (`amazonlinux:2023`) is pulled from Docker Hub. To pull it
 from a company registry or mirror instead, set `BASE_IMAGE_REGISTRY` in `.env` to
 the registry host:
 
