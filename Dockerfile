@@ -1,8 +1,9 @@
 # =============================================================================
 # Copilot Sandbox image
 #
-# Base: IBM Semeru Runtimes (Open) JDK 21 on Ubuntu Jammy.
-# Adds: Node.js 22 (required by Copilot CLI), Maven, and the GitHub Copilot CLI.
+# Base: Ubuntu Noble (24.04 LTS) — the JDK is NOT bundled by the base image.
+# Adds: IBM Semeru (Open) JDK 21, Node.js 22 (required by Copilot CLI), Maven,
+#       and the GitHub Copilot CLI.
 # =============================================================================
 
 # --- Base image registry (override to pull from a company registry/mirror) ----
@@ -12,12 +13,18 @@
 #   --build-arg BASE_IMAGE_REGISTRY=registry.corp.example.com
 # (the copilot-sandbox wrapper passes these from .env automatically).
 ARG BASE_IMAGE_REGISTRY=docker.io
-ARG BASE_IMAGE=ibm-semeru-runtimes:open-21-jdk-jammy
+ARG BASE_IMAGE=ubuntu:noble
 FROM ${BASE_IMAGE_REGISTRY}/${BASE_IMAGE}
 
 # --- Versions (override at build time with --build-arg) -----------------------
 ARG NODE_MAJOR=22
 ARG MAVEN_VERSION=3.9.9
+
+# IBM Semeru (Open) JDK 21 — downloaded from the ibmruntimes GitHub releases at
+# build time (like Node/Maven below). SEMERU_RELEASE is the release tag and
+# SEMERU_PKG_VERSION is the version segment embedded in the asset filename.
+ARG SEMERU_RELEASE=jdk-21.0.9+10_openj9-0.56.0
+ARG SEMERU_PKG_VERSION=21.0.9_10_openj9-0.56.0
 
 # Non-root user the agent runs as.
 ARG APP_USER=copilot
@@ -48,12 +55,36 @@ RUN apt-get update \
         less \
     && rm -rf /var/lib/apt/lists/*
 
+# --- IBM Semeru (Open) JDK 21 -------------------------------------------------
+# Downloaded from the ibmruntimes GitHub releases at build time (the base image
+# no longer bundles a JDK). Arch is detected so the image builds on amd64/arm64.
+# The tarball is verified against its published SHA-256 before extraction.
+ENV JAVA_HOME=/opt/java/semeru
+RUN set -eux; \
+    case "$(dpkg --print-architecture)" in \
+        amd64)  SEMERU_ARCH=x64 ;; \
+        arm64)  SEMERU_ARCH=aarch64 ;; \
+        ppc64el) SEMERU_ARCH=ppc64le ;; \
+        s390x)  SEMERU_ARCH=s390x ;; \
+        *) echo "unsupported architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac; \
+    asset="ibm-semeru-open-jdk_${SEMERU_ARCH}_linux_${SEMERU_PKG_VERSION}.tar.gz"; \
+    base_url="https://github.com/ibmruntimes/semeru21-binaries/releases/download/${SEMERU_RELEASE}"; \
+    curl -fsSL "${base_url}/${asset}" -o /tmp/semeru.tar.gz; \
+    curl -fsSL "${base_url}/${asset}.sha256.txt" -o /tmp/semeru.sha256.txt; \
+    echo "$(awk '{print $1}' /tmp/semeru.sha256.txt)  /tmp/semeru.tar.gz" | sha256sum -c -; \
+    mkdir -p "${JAVA_HOME}"; \
+    tar -xzf /tmp/semeru.tar.gz -C "${JAVA_HOME}" --strip-components=1; \
+    rm -f /tmp/semeru.tar.gz /tmp/semeru.sha256.txt; \
+    "${JAVA_HOME}/bin/java" -version
+ENV PATH=${JAVA_HOME}/bin:${PATH}
+
 # --- Node.js (via NodeSource) -------------------------------------------------
 RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Maven (binary tarball, to avoid pulling a second JDK via apt) -------------
+# --- Maven (binary tarball, so it uses the Semeru JDK installed above) ---------
 RUN curl -fsSL "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz" \
         -o /tmp/maven.tar.gz \
     && mkdir -p /opt/maven \
@@ -84,7 +115,11 @@ RUN curl -fL https://install-cli.jfrog.io | sh \
     && jf --version
 
 # --- Non-root user ------------------------------------------------------------
-RUN groupadd --gid "${APP_GID}" "${APP_USER}" \
+# ubuntu:noble ships a default `ubuntu` user at UID/GID 1000; remove it so the
+# copilot user can take that id (the Jammy-based Semeru image had no such user).
+RUN if getent passwd "${APP_UID}" >/dev/null; then userdel -r "$(getent passwd "${APP_UID}" | cut -d: -f1)" 2>/dev/null || true; fi \
+    && if getent group "${APP_GID}" >/dev/null; then groupdel "$(getent group "${APP_GID}" | cut -d: -f1)" 2>/dev/null || true; fi \
+    && groupadd --gid "${APP_GID}" "${APP_USER}" \
     && useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home --shell /bin/bash "${APP_USER}"
 
 # Copilot stores its credentials/config here; persisted via a Docker volume.
