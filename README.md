@@ -7,7 +7,7 @@ with full permissions (`--allow-all-tools`) without risking your machine.
 The image comes preinstalled with:
 
 - **GitHub Copilot CLI** — device-flow login, credentials persisted across runs
-- **IBM Semeru JDK 21** + **Maven** — Maven resolves through your private Artifactory via the JFrog CLI (no plaintext credentials)
+- **IBM Semeru JDK 21** + **Maven** — Semeru is installed at image build time; Maven resolves through your private Artifactory via the JFrog CLI (no plaintext credentials)
 - A configurable set of **MCP servers** (npm / binary / container / remote), incl. **Azure DevOps**
 - **Azure CLI** (`az`) and **JFrog CLI** (`jf`) — for Azure DevOps and Artifactory auth
 
@@ -90,8 +90,8 @@ All runtime configuration lives in `.env` (copied from [`.env.example`](./.env.e
 | Variable | Purpose |
 | --- | --- |
 | `COPILOT_DEFAULT_MODEL` | Default model for programmatic mode (`--model` overrides). |
-| `BASE_IMAGE_REGISTRY` | Registry the Semeru base image is pulled from at build time (default `docker.io`). |
-| `BASE_IMAGE` | Base image name:tag pulled from the registry (default `ibm-semeru-runtimes:open-21-jdk-jammy`). |
+| `BASE_IMAGE_REGISTRY` | Registry the base image is pulled from at build time (default `docker.io`). |
+| `BASE_IMAGE` | Base image name:tag pulled from the registry (default `ubuntu:noble`). |
 | `ARTIFACTORY_URL` | JFrog Platform URL (not a secret). |
 | `ARTIFACTORY_REPO_RESOLVE_RELEASES` / `ARTIFACTORY_REPO_RESOLVE_SNAPSHOTS` | Maven resolution repos in Artifactory. |
 | `ARTIFACTORY_TOKEN_FILE` | Fallback only: host path to a file holding a scoped access token. |
@@ -101,9 +101,9 @@ All runtime configuration lives in `.env` (copied from [`.env.example`](./.env.e
 
 ### Base image registry
 
-By default the Semeru base image is pulled from Docker Hub. To pull it from a
-company registry or mirror instead, set `BASE_IMAGE_REGISTRY` in `.env` to the
-registry host:
+By default the base image (`ubuntu:noble`) is pulled from Docker Hub. To pull it
+from a company registry or mirror instead, set `BASE_IMAGE_REGISTRY` in `.env` to
+the registry host:
 
 ```dotenv
 BASE_IMAGE_REGISTRY=registry.mycompany.com
@@ -113,6 +113,13 @@ The image is resolved as `${BASE_IMAGE_REGISTRY}/${BASE_IMAGE}`. If your registr
 stores the image under a different path or tag, override `BASE_IMAGE` too. The
 `copilot-sandbox` wrapper passes both values to `docker build` automatically, so a
 plain `./copilot-sandbox build` (or first run) picks them up.
+
+> **JDK download at build time.** The base image no longer bundles a JDK — IBM
+> Semeru (Open) JDK 21 is downloaded from the
+> [`ibmruntimes/semeru21-binaries`](https://github.com/ibmruntimes/semeru21-binaries/releases)
+> GitHub releases during `build` (like Node.js and Maven). Pin or override the
+> version with the `SEMERU_RELEASE` and `SEMERU_PKG_VERSION` build args (defaults
+> are set in the `Dockerfile`).
 
 **Authenticating to a private registry.** If the registry requires a login, run:
 
